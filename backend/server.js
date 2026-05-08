@@ -72,23 +72,25 @@ app.get('/api/palabra-azar', (req, res) => {
 app.post('/api/palabras', (req, res) => {
     const { nuevaPalabra } = req.body;
     
-    // Normalización inmediata
-    const palabraLimpia = nuevaPalabra?.trim().toUpperCase();
+    if (!nuevaPalabra) return res.status(400).json({ message: "La palabra no puede estar vacía" });
 
-    if (!palabraLimpia) return res.status(400).json({ message: "La palabra no puede estar vacía" });
-
-    // Lógica de Compiladores (Lexer y Parser)
-    const tokens = lexer.tokenize(palabraLimpia);
-    if (tokens.error) return res.status(400).json({ message: tokens.error });
+    // 1. Llamamos al lexer. Él internamente normaliza (quita tildes)
+    const tokens = lexer.tokenize(nuevaPalabra); 
     
-    const verificacion = parser.parse(tokens, palabraLimpia);
+    if (tokens.error) return res.status(400).json({ message: tokens.error });
+
+    // 2. RECONSTRUIMOS la palabra desde los tokens para asegurar que no tenga tildes
+    const palabraParaGuardar = tokens.map(t => t.value).join('');
+
+    // 3. Pasamos la palabra reconstruida al parser
+    const verificacion = parser.parse(tokens, palabraParaGuardar);
     if (verificacion.error) return res.status(400).json({ message: verificacion.error });
 
-    // Guardar en la BD
-    db.run("INSERT INTO diccionario (palabra) VALUES (?)", [palabraLimpia], (err) => {
+    // 4. GUARDAMOS 'palabraParaGuardar' (la que ya no tiene tildes)
+    db.run("INSERT INTO diccionario (palabra) VALUES (?)", [palabraParaGuardar], (err) => {
         if (err) {
-            if (err.message.includes('UNIQUE')) return res.status(400).json({ message: "Esa palabra ya existe en el diccionario" });
-            return res.status(500).json({ message: "Error interno al guardar" });
+            if (err.message.includes('UNIQUE')) return res.status(400).json({ message: "Esa palabra ya existe" });
+            return res.status(500).json({ message: "Error interno" });
         }
         res.json({ message: "Palabra guardada correctamente" });
     });
